@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Config va Secrets
+config.py
+.env
+.env.local
+api_keys.txt
+token.txt
+
+# Logs
+*.log
+debug-logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp fayllar
+*.tmp
+*.temp
+*.bak
+
+# Test fayllar va coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Others
+.project
+.pydevproject
+.settings/
