@@ -9,7 +9,7 @@ DATABASE_NAME = "smartdars.db"
 # Bot admin telegram ID (ixtiyoriy)
 # Admin bo'lish uchun bizga adminningiz Telegram ID si kerak!
 # Bot: @userinfobot dan ID'ni oling
-ADMIN_ID = 1937466761# Misol: ADMIN_ID = 123456789
+ADMIN_ID = 6966450957# Misol: ADMIN_ID = 123456789
 
 # Test davomiyligi (soatlar)
 TEST_TIMEOUT = 10
