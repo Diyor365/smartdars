@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters, ContextTypes,
@@ -11,6 +12,13 @@ from datetime import datetime
 from database import Database
 from admin import AdminPanel
 from config import ADMIN_ID
+
+# .env fayildan config yuklash
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # Production'da .env kerak bo'lmasa
 
 # Logging sozlash
 logging.basicConfig(
@@ -26,7 +34,7 @@ with open('questions.json', 'r', encoding='utf-8') as f:
 # Bot holatlarini belgilash
 SINF, FAN, MAVZU, TEST, NATIJA = range(5)
 # Admin holatlar
-ADMIN_MENU, ADD_QUESTION, SEARCH_QUESTIONS = range(5, 8)
+ADMIN_MENU, ADD_QUESTION, SEARCH_QUESTIONS, IMPORT_QUESTIONS = range(5, 9)
 
 # Database objekti
 db = Database()
@@ -471,8 +479,34 @@ async def admin_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return SEARCH_QUESTIONS
     
+    elif "Import" in text:
+        # Bulk import menyu
+        keyboard = [
+            ["📋 CSV import", "📄 JSON import"],
+            ["📝 CSV template", "📝 JSON template"],
+            ["🔙 Orqaga"]
+        ]
+        
+        await update.message.reply_text(
+            "📥 *BULK IMPORT*\n\n"
+            "Ko'plab savolllarni bir danda import qiling!\n\n"
+            "Tanlang:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        context.user_data['import_mode'] = 'menu'
+        return IMPORT_QUESTIONS
+    
     elif "Chiqish" in text:
-        return await start(update, context)
+        context.user_data.clear()
+        keyboard = [["🚀 Testni boshlash", "📊 Mening statistikam"]]
+        
+        await update.message.reply_text(
+            "🎓 *Salom!*\n\nBoshlash uchun tugmani bosing:",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        return ConversationHandler.END
     
     elif "Orqaga" in text:
         return await admin_menu(update, context)
@@ -538,11 +572,163 @@ async def search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return SEARCH_QUESTIONS
 
 
+async def import_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Bulk import handler"""
+    user_id = update.effective_user.id
+    
+    if not admin_panel.is_admin(user_id):
+        return ConversationHandler.END
+    
+    text = update.message.text
+    
+    if "CSV template" in text:
+        msg = admin_panel.generate_csv_template()
+        await update.message.reply_text(
+            f"{msg}\n\n"
+            "📋 template.csv faylini tahrirlang va 📋 CSV import bilan qayta jo'nating",
+            reply_markup=ReplyKeyboardMarkup(
+                [["🔙 Orqaga"]],
+                resize_keyboard=True
+            )
+        )
+        return IMPORT_QUESTIONS
+    
+    elif "JSON template" in text:
+        msg = admin_panel.generate_json_template()
+        await update.message.reply_text(
+            f"{msg}\n\n"
+            "📄 template.json faylini tahrirlang va 📄 JSON import bilan qayta jo'nating",
+            reply_markup=ReplyKeyboardMarkup(
+                [["🔙 Orqaga"]],
+                resize_keyboard=True
+            )
+        )
+        return IMPORT_QUESTIONS
+    
+    elif "CSV import" in text:
+        await update.message.reply_text(
+            "📋 CSV fayl nomini kiriting:\n"
+            "(Masalan: questions.csv)",
+            reply_markup=ReplyKeyboardMarkup(
+                [["🔙 Orqaga"]],
+                resize_keyboard=True
+            )
+        )
+        context.user_data['import_mode'] = 'csv'
+        return IMPORT_QUESTIONS
+    
+    elif "JSON import" in text:
+        await update.message.reply_text(
+            "📄 JSON fayl nomini kiriting:\n"
+            "(Masalan: questions.json)",
+            reply_markup=ReplyKeyboardMarkup(
+                [["🔙 Orqaga"]],
+                resize_keyboard=True
+            )
+        )
+        context.user_data['import_mode'] = 'json'
+        return IMPORT_QUESTIONS
+    
+    elif context.user_data.get('import_mode') == 'csv':
+        filename = text.strip()
+        if filename == "🔙 Orqaga":
+            return await admin_menu(update, context)
+        
+        try:
+            success, msg, stats = admin_panel.bulk_import_csv(filename)
+            
+            result_text = (
+                f"{msg}\n\n"
+                f"📊 Statistika:\n"
+                f"✅ Import qilindi: {stats.get('imported', 0)}\n"
+                f"❌ Xatolar: {stats.get('errors', 0)}"
+            )
+            
+            # Savolllarni qayta yuklash
+            global QUESTIONS
+            admin_panel.load_questions()
+            with open('questions.json', 'r', encoding='utf-8') as f:
+                QUESTIONS = json.load(f)
+            
+            await update.message.reply_text(
+                result_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=ReplyKeyboardMarkup(
+                    [["🔙 Orqaga"]],
+                    resize_keyboard=True
+                )
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Xato: {e}",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["🔙 Orqaga"]],
+                    resize_keyboard=True
+                )
+            )
+        
+        return IMPORT_QUESTIONS
+    
+    elif context.user_data.get('import_mode') == 'json':
+        filename = text.strip()
+        if filename == "🔙 Orqaga":
+            return await admin_menu(update, context)
+        
+        try:
+            success, msg, stats = admin_panel.bulk_import_json_array(filename)
+            
+            result_text = (
+                f"{msg}\n\n"
+                f"📊 Statistika:\n"
+                f"✅ Import qilindi: {stats.get('imported', 0)}\n"
+                f"❌ Xatolar: {stats.get('errors', 0)}"
+            )
+            
+            # Savolllarni qayta yuklash
+            global QUESTIONS
+            admin_panel.load_questions()
+            with open('questions.json', 'r', encoding='utf-8') as f:
+                QUESTIONS = json.load(f)
+            
+            await update.message.reply_text(
+                result_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=ReplyKeyboardMarkup(
+                    [["🔙 Orqaga"]],
+                    resize_keyboard=True
+                )
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Xato: {e}",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["🔙 Orqaga"]],
+                    resize_keyboard=True
+                )
+            )
+        
+        return IMPORT_QUESTIONS
+    
+    elif "Orqaga" in text:
+        return await admin_menu(update, context)
+    
+    return IMPORT_QUESTIONS
+
+
 # ==================== MAN SETUP ====================
 def main():
     """Bot ishga tushirish"""
-    # Token o'z .env fayliga qo'yish kerak
-    from config import TOKEN
+    # Token'ni .env yoki environment'dan o'qish
+    try:
+        # Birinchi, config.py'dan
+        from config import TOKEN as CONFIG_TOKEN
+        TOKEN = CONFIG_TOKEN
+    except:
+        # Yoki environment'dan
+        TOKEN = os.getenv('BOT_TOKEN')
+    
+    if not TOKEN or TOKEN == "YOUR_BOT_TOKEN_HERE":
+        raise ValueError("❌ BOT_TOKEN o'rnatilmagan! .env fayliga yoki config.py'ga TOKEN'ni qo'ying!")
     
     # Application yaratish
     app = Application.builder().token(TOKEN).build()
@@ -573,6 +759,7 @@ def main():
             ADMIN_MENU: [MessageHandler(filters.TEXT, admin_menu_handler)],
             ADD_QUESTION: [MessageHandler(filters.TEXT, add_question_handler)],
             SEARCH_QUESTIONS: [MessageHandler(filters.TEXT, search_handler)],
+            IMPORT_QUESTIONS: [MessageHandler(filters.TEXT, import_handler)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
