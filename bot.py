@@ -685,7 +685,7 @@ async def import_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
             
             # Savolllarni qayta yuklash
-            global QUESTIONS
+            
             admin_panel.load_questions()
             with open('questions.json', 'r', encoding='utf-8') as f:
                 QUESTIONS = json.load(f)
