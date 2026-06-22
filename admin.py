@@ -398,3 +398,204 @@ class AdminPanel:
             text += f"❓ {r['savol']}\n\n"
         
         return text
+    
+    # ==================== BULK IMPORT ====================
+    
+    def bulk_import_csv(self, csv_file: str) -> Tuple[bool, str, Dict]:
+        """CSV fayildan ko'plab savolllarni import qilish"""
+        try:
+            import csv
+            
+            imported_count = 0
+            errors = []
+            
+            with open(csv_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                
+                for row_num, row in enumerate(reader, start=2):  # Header shuning uchun 2'dan
+                    try:
+                        question_data = {
+                            'sinf': row.get('sinf', '').strip(),
+                            'fan': row.get('fan', '').lower().strip(),
+                            'mavzu': row.get('mavzu', '').lower().strip(),
+                            'savol': row.get('savol', '').strip(),
+                            'variantlar': [
+                                row.get('variant1', '').strip(),
+                                row.get('variant2', '').strip(),
+                                row.get('variant3', '').strip(),
+                                row.get('variant4', '').strip(),
+                            ],
+                            'togri': row.get('togri', '').strip()
+                        }
+                        
+                        # Validation
+                        is_valid, error_msg = self._validate_question(question_data)
+                        if not is_valid:
+                            errors.append(f"Satr {row_num}: {error_msg}")
+                            continue
+                        
+                        # Qo'shish
+                        success, msg = self._add_question_to_data(question_data)
+                        if success:
+                            imported_count += 1
+                        else:
+                            errors.append(f"Satr {row_num}: {msg}")
+                    
+                    except Exception as e:
+                        errors.append(f"Satr {row_num}: {str(e)}")
+            
+            result_msg = f"✅ {imported_count} ta savol import qilindi!"
+            if errors:
+                result_msg += f"\n\n⚠️ {len(errors)} ta xato:\n"
+                result_msg += "\n".join(errors[:10])  # Birinchi 10 ta xato
+                if len(errors) > 10:
+                    result_msg += f"\n... va {len(errors)-10} ta ko'p xato"
+            
+            return True, result_msg, {'imported': imported_count, 'errors': len(errors)}
+        
+        except Exception as e:
+            return False, f"❌ CSV import xatosi: {e}", {}
+    
+    def bulk_import_json_array(self, json_file: str) -> Tuple[bool, str, Dict]:
+        """JSON (massiv) fayildan ko'plab savolllarni import qilish"""
+        try:
+            imported_count = 0
+            errors = []
+            
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Agar massiv bo'lsa
+            if isinstance(data, list):
+                questions_list = data
+            else:
+                return False, "❌ JSON fayil massiv bo'lishi kerak", {}
+            
+            for idx, question_data in enumerate(questions_list, start=1):
+                try:
+                    # Normalizatsiya
+                    normalized = {
+                        'sinf': str(question_data.get('sinf', '1')).strip(),
+                        'fan': str(question_data.get('fan', '')).lower().strip(),
+                        'mavzu': str(question_data.get('mavzu', '')).lower().strip(),
+                        'savol': str(question_data.get('savol', '')).strip(),
+                        'variantlar': question_data.get('variantlar', []),
+                        'togri': str(question_data.get('togri', '')).strip()
+                    }
+                    
+                    # Variant'larni ensure qilish (4 ta bo'lishi kerak)
+                    if len(normalized['variantlar']) < 4:
+                        errors.append(f"Savol {idx}: 4 ta variant kerak ({len(normalized['variantlar'])} ta bor)")
+                        continue
+                    
+                    # Validation
+                    is_valid, error_msg = self._validate_question(normalized)
+                    if not is_valid:
+                        errors.append(f"Savol {idx}: {error_msg}")
+                        continue
+                    
+                    # Qo'shish
+                    success, msg = self._add_question_to_data(normalized)
+                    if success:
+                        imported_count += 1
+                    else:
+                        errors.append(f"Savol {idx}: {msg}")
+                
+                except Exception as e:
+                    errors.append(f"Savol {idx}: {str(e)}")
+            
+            result_msg = f"✅ {imported_count} ta savol import qilindi!"
+            if errors:
+                result_msg += f"\n\n⚠️ {len(errors)} ta xato:\n"
+                result_msg += "\n".join(errors[:10])
+                if len(errors) > 10:
+                    result_msg += f"\n... va {len(errors)-10} ta ko'p xato"
+            
+            return True, result_msg, {'imported': imported_count, 'errors': len(errors)}
+        
+        except Exception as e:
+            return False, f"❌ JSON import xatosi: {e}", {}
+    
+    def _validate_question(self, question_data: Dict) -> Tuple[bool, str]:
+        """Savol ma'lumotlarini tekshirish"""
+        
+        # Sinf tekshirish
+        if question_data['sinf'] not in ['1', '2', '3', '4']:
+            return False, "Sinf 1-4 bo'lishi kerak"
+        
+        # Fan tekshirish
+        if not question_data['fan']:
+            return False, "Fan nomi kerak"
+        
+        # Mavzu tekshirish
+        if not question_data['mavzu']:
+            return False, "Mavzu nomi kerak"
+        
+        # Savol tekshirish
+        if not question_data['savol']:
+            return False, "Savol matni kerak"
+        
+        # Variantlar tekshirish
+        if len(question_data['variantlar']) < 4 or any(not v for v in question_data['variantlar']):
+            return False, "4 ta variant kerak (bo'sh bo'lmasa)"
+        
+        # To'g'ri javob tekshirish
+        if question_data['togri'] not in question_data['variantlar']:
+            return False, "To'g'ri javob variantlar orasida bo'lishi kerak"
+        
+        return True, "OK"
+    
+    # ==================== TEMPLATE GENERATSIYA ====================
+    
+    def generate_csv_template(self) -> str:
+        """CSV template yaratish"""
+        template = """sinf,fan,mavzu,savol,variant1,variant2,variant3,variant4,togri
+1,matematika,qoshish,2 + 3 = ?,4,5,6,7,5
+1,matematika,qoshish,1 + 6 = ?,5,6,7,8,7
+1,matematika,ayirish,5 - 2 = ?,2,3,4,5,3
+2,matematika,kopaytirish,3 × 4 = ?,7,10,12,14,12
+2,matematika,bolish,20 ÷ 5 = ?,2,3,4,5,4
+"""
+        try:
+            with open('template.csv', 'w', encoding='utf-8') as f:
+                f.write(template)
+            return "✅ template.csv yaratildi!"
+        except Exception as e:
+            return f"❌ Xato: {e}"
+    
+    def generate_json_template(self) -> str:
+        """JSON template yaratish"""
+        template = [
+            {
+                "sinf": "1",
+                "fan": "matematika",
+                "mavzu": "qoshish",
+                "savol": "2 + 3 = ?",
+                "variantlar": ["4", "5", "6", "7"],
+                "togri": "5"
+            },
+            {
+                "sinf": "1",
+                "fan": "matematika",
+                "mavzu": "qoshish",
+                "savol": "1 + 6 = ?",
+                "variantlar": ["5", "6", "7", "8"],
+                "togri": "7"
+            },
+            {
+                "sinf": "2",
+                "fan": "matematika",
+                "mavzu": "kopaytirish",
+                "savol": "3 × 4 = ?",
+                "variantlar": ["7", "10", "12", "14"],
+                "togri": "12"
+            }
+        ]
+        
+        try:
+            with open('template.json', 'w', encoding='utf-8') as f:
+                json.dump(template, f, ensure_ascii=False, indent=2)
+            return "✅ template.json yaratildi!"
+        except Exception as e:
+            return f"❌ Xato: {e}"
+

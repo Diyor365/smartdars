@@ -321,6 +321,21 @@
           "togri": "4"
         }
       ]
+    },
+    "ona tili": {
+      "unlilar": [
+        {
+          "id": 27,
+          "savol": "nimar nimadir",
+          "variantlar": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "togri": "1"
+        }
+      ]
     }
   }
 }
